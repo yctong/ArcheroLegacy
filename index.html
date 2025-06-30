@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Arena Rewards Calculator</title>
+  <title>Arena & Fight Calculator</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: auto; }
+    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
     label { display: block; margin-top: 10px; }
-    select, button { width: 100%; padding: 8px; margin-top: 5px; }
-    #output { margin-top: 20px; white-space: pre-wrap; }
+    select, input, button { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+    #output, #fightOutput { margin-top: 20px; white-space: pre-wrap; }
     .hidden { display: none; }
     .helper { margin-bottom: 20px; color: #555; }
+    h2 { margin-top: 40px; }
   </style>
 </head>
 <body>
@@ -41,28 +42,51 @@
   <button id="calculateBtn">Calculate Rewards</button>
   <div id="output"></div>
 
+  <h2>Fight Calculator</h2>
+  <p class="helper">Estimate how many fights you need to close a point gap against an opponent, based on your combo and win rate.</p>
+
+  <label>Points Combo (W/L):
+    <select id="comboSelect">
+      <option value="+20/-5">+20/-5</option>
+      <option value="+15/-8">+15/-8</option>
+      <option value="+10/-10">+10/-10</option>
+      <option value="+8/-10">+8/-10</option>
+      <option value="+6/-10">+6/-10</option>
+    </select>
+  </label>
+  <label>Point Difference (e.g. "1200-1000" or a number):
+    <input id="diffInput" type="text" value="200" />
+  </label>
+  <label>Win Rate (%):
+    <input id="winRateInput" type="number" min="0" max="100" value="50" />
+  </label>
+  <button id="fightCalcBtn">Calculate Fights</button>
+  <div id="fightOutput"></div>
+
   <script>
+    // Arena calculator data
     let tiers = [];
     let rewards = {};
 
-    function loadData() {
+    function loadArenaData() {
       return fetch('arena.json')
         .then(res => res.json())
         .then(data => {
           tiers = data.tiers;
           rewards = data.rewards;
-          populateTierSelect(document.getElementById('currentTier'));
+          populateTierSelect();
         });
     }
 
-    function populateTierSelect(select) {
-      select.innerHTML = tiers.map(t => `<option value="${t}">${t}</option>`).join('');
-      updateRankSelect(document.getElementById('currentRank'), select.value);
+    function populateTierSelect() {
+      const curTier = document.getElementById('currentTier');
+      curTier.innerHTML = tiers.map(t => `<option>${t}</option>`).join('');
+      updateRankSelect(document.getElementById('currentRank'), curTier.value);
     }
 
     function updateRankSelect(rankSelect, tier) {
       const ranks = Object.keys(rewards[tier] || {});
-      rankSelect.innerHTML = ranks.map(r => `<option value="${r}">${r}</option>`).join('');
+      rankSelect.innerHTML = ranks.map(r => `<option>${r}</option>`).join('');
     }
 
     function updateNewOptions() {
@@ -80,12 +104,12 @@
         let nt = '';
         if (cycle === 'Promote' && idx < tiers.length - 1) nt = tiers[idx + 1];
         if (cycle === 'Demote' && idx > 0) nt = tiers[idx - 1];
-        newTierSel.innerHTML = nt ? `<option value="${nt}">${nt}</option>` : '';
+        newTierSel.innerHTML = nt ? `<option>${nt}</option>` : '';
         updateRankSelect(newRankSel, nt);
       }
     }
 
-    function calculate() {
+    function calculateArena() {
       const cycle = document.getElementById('cycleType').value;
       const t1 = document.getElementById('currentTier').value;
       const r1 = document.getElementById('currentRank').value;
@@ -99,7 +123,7 @@
         ticket: dt1 * 6 + st1
       };
 
-      let c2 = { ...c1 };
+      let c2 = {...c1};
       if (cycle !== 'Maintain') {
         const t2 = document.getElementById('newTier').value;
         const r2 = document.getElementById('newRank').value;
@@ -123,10 +147,48 @@
       updateRankSelect(document.getElementById('currentRank'), e.target.value);
       updateNewOptions();
     });
-    document.getElementById('calculateBtn').addEventListener('click', calculate);
+    document.getElementById('calculateBtn').addEventListener('click', calculateArena);
 
-    // Initialize
-    loadData().then(() => updateNewOptions());
+    // Fight Calculator logic
+    function calculateFights() {
+      const combo = document.getElementById('comboSelect').value.split('/');
+      const winPts = parseFloat(combo[0].replace('+',''));
+      const losePts = parseFloat(combo[1].replace('-',''));
+      const expr = document.getElementById('diffInput').value.trim();
+      let gap;
+      if (expr.includes('-')) {
+        const [a,b] = expr.split('-',2).map(Number);
+        gap = a - b;
+      } else {
+        gap = Number(expr);
+      }
+      if (isNaN(gap)) {
+        document.getElementById('fightOutput').textContent = 'Invalid difference. Use format A-B or a number.';
+        return;
+      }
+      const p = Number(document.getElementById('winRateInput').value) / 100;
+      // mutual-impact: win ⇒ gap - 2W, lose ⇒ gap + 2L
+      const netMutual = p * (2 * winPts) + (1 - p) * (-2 * losePts);
+      // solo-impact: win ⇒ gap - W, lose ⇒ gap + L
+      const netSolo = p * (winPts) + (1 - p) * (-losePts);
+      let out = '';
+      if (netMutual <= 0) {
+        out += 'Mutual-impact: cannot close gap at this win rate.\n';
+      } else {
+        out += `Mutual-impact: ≈ ${Math.ceil(gap / netMutual)} fight(s)\n`;
+      }
+      if (netSolo <= 0) {
+        out += 'Solo-impact: cannot close gap at this win rate.';
+      } else {
+        out += `Solo-impact: ≈ ${Math.ceil(gap / netSolo)} fight(s)`;
+      }
+      document.getElementById('fightOutput').textContent = out;
+    }
+
+    document.getElementById('fightCalcBtn').addEventListener('click', calculateFights);
+
+    // Initialize on load
+    loadArenaData().then(() => updateNewOptions());
   </script>
 </body>
 </html>
