@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arena Rewards Calculator</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: auto; }
+    label { display: block; margin-top: 10px; }
+    select, button { width: 100%; padding: 8px; margin-top: 5px; }
+    #output { margin-top: 20px; white-space: pre-wrap; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Arena Rewards Calculator</h1>
+  <label>Cycle Type:
+    <select id="cycleType">
+      <option value="Maintain">Maintain</option>
+      <option value="Promote">Promote</option>
+      <option value="Demote">Demote</option>
+    </select>
+  </label>
+  <label>Current Tier:
+    <select id="currentTier"></select>
+  </label>
+  <label>Current Rank:
+    <select id="currentRank"></select>
+  </label>
+  <div id="newSelection" class="hidden">
+    <label>New Tier:
+      <select id="newTier"></select>
+    </label>
+    <label>New Rank:
+      <select id="newRank"></select>
+    </label>
+  </div>
+  <button id="calculateBtn">Calculate Rewards</button>
+  <div id="output"></div>
+
+  <script>
+    let tiers = [];
+    let rewards = {};
+
+    function loadData() {
+      return fetch('arena.json')
+        .then(res => res.json())
+        .then(data => {
+          tiers = data.tiers;
+          rewards = data.rewards;
+          populateTierSelect(document.getElementById('currentTier'));
+        });
+    }
+
+    function populateTierSelect(select) {
+      select.innerHTML = tiers.map(t => `<option value="${t}">${t}</option>`).join('');
+      updateRankSelect(document.getElementById('currentRank'), select.value);
+    }
+
+    function updateRankSelect(rankSelect, tier) {
+      const ranks = Object.keys(rewards[tier] || {});
+      rankSelect.innerHTML = ranks.map(r => `<option value="${r}">${r}</option>`).join('');
+    }
+
+    function updateNewOptions() {
+      const cycle = document.getElementById('cycleType').value;
+      const curTier = document.getElementById('currentTier').value;
+      const newSection = document.getElementById('newSelection');
+      const newTierSel = document.getElementById('newTier');
+      const newRankSel = document.getElementById('newRank');
+
+      if (cycle === 'Maintain') {
+        newSection.classList.add('hidden');
+      } else {
+        newSection.classList.remove('hidden');
+        const idx = tiers.indexOf(curTier);
+        let nt = '';
+        if (cycle === 'Promote' && idx < tiers.length - 1) nt = tiers[idx + 1];
+        if (cycle === 'Demote' && idx > 0) nt = tiers[idx - 1];
+        newTierSel.innerHTML = nt ? `<option value="${nt}">${nt}</option>` : '';
+        updateRankSelect(newRankSel, nt);
+      }
+    }
+
+    function calculate() {
+      const cycle = document.getElementById('cycleType').value;
+      const t1 = document.getElementById('currentTier').value;
+      const r1 = document.getElementById('currentRank').value;
+      const v1 = rewards[t1][r1];
+      if (!v1) return;
+      const [dg1, ds1, dt1, sg1, sgld1, ss1, st1] = v1;
+      const c1 = {
+        gems: sg1,
+        gold: dg1 * 6 + sgld1,
+        scroll: ds1 * 6 + ss1,
+        ticket: dt1 * 6 + st1
+      };
+
+      let c2 = { ...c1 };
+      if (cycle !== 'Maintain') {
+        const t2 = document.getElementById('newTier').value;
+        const r2 = document.getElementById('newRank').value;
+        const v2 = rewards[t2][r2];
+        const [dg2, ds2, dt2, sg2, sgld2, ss2, st2] = v2;
+        c2 = {
+          gems: sg2,
+          gold: dg2 * 6 + sgld2,
+          scroll: ds2 * 6 + ss2,
+          ticket: dt2 * 6 + st2
+        };
+      }
+
+      const total1 = `1-Cycle: ${c1.gems} Gems, ${c1.gold} Gold, ${c1.scroll} Scroll, ${c1.ticket} Ticket`;
+      const total2 = `2-Cycle: ${c1.gems + c2.gems} Gems, ${c1.gold + c2.gold} Gold, ${c1.scroll + c2.scroll} Scroll, ${c1.ticket + c2.ticket} Ticket`;
+      document.getElementById('output').textContent = `${total1}\n${total2}`;
+    }
+
+    document.getElementById('cycleType').addEventListener('change', updateNewOptions);
+    document.getElementById('currentTier').addEventListener('change', e => {
+      updateRankSelect(document.getElementById('currentRank'), e.target.value);
+      updateNewOptions();
+    });
+    document.getElementById('calculateBtn').addEventListener('click', calculate);
+
+    // Initialize
+    loadData().then(() => updateNewOptions());
+  </script>
+</body>
+</html>
